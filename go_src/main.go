@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -66,6 +66,9 @@ func writeData(servers []Server, writeAPI api.WriteAPI) {
 		"Build":       {},
 	}
 
+	totalPlayers := 0
+	totalQueuePlayers := 0
+
 	// Count occurrences of each stat
 	for _, server := range servers {
 		stats["Map"][server.Map]++
@@ -79,7 +82,21 @@ func writeData(servers []Server, writeAPI api.WriteAPI) {
 		stats["HasPassword"][fmt.Sprintf("%t", server.HasPassword)]++
 		stats["AntiCheat"][server.AntiCheat]++
 		stats["Build"][server.Build]++
+		totalPlayers += server.Players
+		totalQueuePlayers += server.QueuePlayers
 	}
+
+	// Write total players count as a special aggregated stat
+	totalPlayersPoint := influxdb2.NewPointWithMeasurement("players_stats").
+		AddField("total_players", totalPlayers).
+		SetTime(timestamp)
+	writeAPI.WritePoint(totalPlayersPoint)
+
+	// Write total queued players count as a special aggregated stat
+	totalQueuePlayersPoint := influxdb2.NewPointWithMeasurement("queue_players_stats").
+		AddField("total_queue_players", totalQueuePlayers).
+		SetTime(timestamp)
+	writeAPI.WritePoint(totalQueuePlayersPoint)
 
 	// Write the stats to InfluxDB
 	for stat, counts := range stats {
@@ -112,7 +129,7 @@ func getData() ([]Server, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Println("Error reading response body:", err)
 		return nil, err
